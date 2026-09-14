@@ -418,18 +418,31 @@ reclaim() {
 
 grow() {
   # Escape hatch if the image ever fills: grow <size>, e.g. `grow 400G`.
-  # truncate extends the sparse file; resize2fs grows the ext4 — safe while
-  # MOUNTED (online grow). Requires root; docker keeps running.
+  # truncate extends the sparse file; resize2fs grows the ext4. Tries ONLINE
+  # first (mounted, docker keeps running) — but DSM's 4.4 kernel ext4 driver
+  # fails large single-shot online grows ("Invalid argument ... add group #N").
+  # Fallback: OFFLINE resize (unmount -> resize2fs -> remount), which requires
+  # dockerd down. If docker is up, stop it first and re-run.
   require_root
   local size="${1:-}"
   [ -n "$size" ] || fail "usage: $0 grow <size>  (e.g. grow 400G)"
   mounted || fail "$MNT not mounted — mount it first (systemctl start docker-ext4.mount)"
-  local before after
-  before=$(df -Bm --output=used "$MNT" | tail -1 | tr -dc 0-9)
   truncate -s "$size" "$IMG"
-  resize2fs "$IMG"
-  after=$(df -h "$MNT" | tail -1)
-  log "grew image to $size (used was ${before}MB). New layout: $after"
+
+  if resize2fs "$IMG" 2>&1 | tee -a "$LOG"; then
+    log "grew image to $size (online). Now: $(df -h "$MNT" | tail -1)"
+    return 0
+  fi
+
+  log "online resize failed (DSM 4.4 kernel limitation on large single-shot grows)"
+  if docker_up; then
+    fail "offline resize needs dockerd down. Stop docker (systemctl stop pkgctl-ContainerManager.service), then re-run: $0 grow $size"
+  fi
+  log "dockerd is down — doing offline resize (unmount -> resize2fs -> remount)"
+  umount "$MNT" || fail "could not unmount $MNT — check for open files (lsof +D $MNT)"
+  resize2fs "$IMG" 2>&1 | tee -a "$LOG" || { mount -o loop,noatime "$IMG" "$MNT"; fail "offline resize failed — remounted $MNT unchanged"; }
+  mount -o loop,noatime "$IMG" "$MNT" || fail "remount failed — run: mount -o loop,noatime $IMG $MNT"
+  log "grew image to $size (offline). Now: $(df -h "$MNT" | tail -1)"
 }
 
 case "${1:-}" in
