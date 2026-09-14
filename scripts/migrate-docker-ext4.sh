@@ -88,7 +88,15 @@ preflight() {
   [ -d "$OLD_ROOT" ] || fail "$OLD_ROOT missing — nothing to migrate"
   [ -f "$DOCKER_CFG" ] || fail "$DOCKER_CFG not found"
 
-  grep -q aufs /proc/filesystems || fail "kernel has no aufs support — this design requires it (no overlayfs on DSM 4.4 kernels)"
+  # aufs may be an UNLOADED module — /proc/filesystems only lists loaded
+  # filesystems, and after a reboot with dockerd down nobody has loaded it.
+  # Load it, THEN assert (module file exists in /lib/modules on DSM; Synology
+  # has no modinfo binary).
+  if ! grep -q aufs /proc/filesystems; then
+    log "aufs not loaded — modprobing (normally loaded on demand by dockerd)"
+    modprobe aufs 2>/dev/null || true
+  fi
+  grep -q aufs /proc/filesystems || fail "kernel has no aufs support even after modprobe — this design requires it (no overlayfs on DSM 4.4 kernels)"
   modinfo -F filename aufs >/dev/null 2>&1 || true   # module may be builtin/loaded; /proc check above is authoritative
 
   local need_mb free_mb have_mb
