@@ -8,7 +8,10 @@ LOG=/volume1/overnight-migrate.log
 DIR="$(cd "$(dirname "$0")" && pwd)"
 
 if [ "${DETACHED:-0}" != "1" ]; then
-  DETACHED=1 nohup "$0" >> "$LOG" 2>&1 &
+  # setsid is REQUIRED on DSM (systemd): a plain nohup background child is
+  # killed when the launching ssh session's scope is torn down at logout.
+  # setsid gives the child its own session, reparented to init.
+  DETACHED=1 setsid nohup "$0" >> "$LOG" 2>&1 < /dev/null &
   echo "launched detached (pid $!) — progress: tail -f $LOG"
   exit 0
 fi
