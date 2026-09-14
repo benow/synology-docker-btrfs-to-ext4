@@ -234,7 +234,16 @@ prune_docker() {
   log "removed $n stale tags"
   if [ "${PRUNE_BUILD_CACHE:-0}" = "1" ]; then
     log "pruning build cache (PRUNE_BUILD_CACHE=1 — next builds re-download/rebuild)"
+    log "  (builder prune scans the whole cache BEFORE deleting anything — no output until done; watching /volume1 usage for progress)"
+    # Progress monitor: builder prune is silent for its entire scan+delete;
+    # log falling /volume1 usage every 60s so a long prune doesn't look hung.
+    ( while :; do
+        sleep 60
+        echo "[$(date '+%F %T')] prune progress: /volume1 used=$(df --output=used -Bm /volume1 | tail -1 | tr -dc 0-9)MB" >> "$LOG"
+      done ) &
+    local mon_pid=$!
     docker builder prune -f | tail -2 | tee -a "$LOG"
+    kill "$mon_pid" 2>/dev/null || true
   fi
   docker system df 2>/dev/null | tee -a "$LOG" || true
 }
