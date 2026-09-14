@@ -287,8 +287,10 @@ copy() {
   # transfer and the verification so the passes agree; containers recreate
   # sockets at runtime. Without the excludes rsync exits 23 (partial transfer)
   # and verification false-fails on the same files.
+  # NB: the dotnet sockets end in "-socket" (not ".socket") — pattern must be
+  # '*socket' to match both spellings.
   local X=(-aHAX --numeric-ids --delete
-           --exclude='*.socket' --exclude='Singleton*')
+           --exclude='*socket' --exclude='Singleton*')
   log "rsync $OLD_ROOT/ -> $MNT/ (resumable; safe to re-run)"
   rsync "${X[@]}" --info=progress2,stats2 "$OLD_ROOT/" "$MNT/"
 
