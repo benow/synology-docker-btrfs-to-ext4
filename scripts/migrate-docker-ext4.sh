@@ -265,8 +265,9 @@ copy() {
       docker stop nastv-runner nastv-runner-2 >/dev/null 2>&1 || true
       svc_start
       local waited=0
-      until docker_up || [ "$waited" -ge 120 ]; do sleep 5; waited=$((waited+5)); done
-      docker_up || fail "dockerd did not come up for pre-copy prune — run 'status', fix, re-run copy"
+      # dockerd takes ~6+ min to start on the sick btrfs volume — allow 15
+      until docker_up || [ "$waited" -ge 900 ]; do sleep 10; waited=$((waited+10)); done
+      docker_up || fail "dockerd did not come up in 15m for pre-copy prune — run 'status', fix, re-run copy"
     fi
     prune_docker
   fi
